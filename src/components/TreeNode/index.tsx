@@ -1,4 +1,4 @@
-import { defineComponent, reactive, computed, PropType } from 'vue';
+import { defineComponent, reactive, computed, PropType, CSSProperties } from 'vue';
 import Brackets from 'src/components/Brackets';
 import CheckController from 'src/components/CheckController';
 import Carets from 'src/components/Carets';
@@ -24,7 +24,7 @@ export const treeNodePropsPass = {
   // Custom formatter for values.
   customValueFormatter: Function as PropType<
     (
-      data: string,
+      data: unknown,
       key: NodeDataType['key'],
       path: string,
       defaultFormatResult: string | JSX.Element,
@@ -42,6 +42,10 @@ export const treeNodePropsPass = {
     type: Boolean,
     default: true,
   },
+  showLineNumber: {
+    type: Boolean,
+    default: false,
+  },
   // Whether to trigger selection when clicking on the node.
   selectOnClickNode: {
     type: Boolean,
@@ -54,7 +58,7 @@ export const treeNodePropsPass = {
   },
   // When using the selectableType, define whether current path/content is enabled.
   pathSelectable: {
-    type: Function as PropType<(path: string, content: string) => boolean>,
+    type: Function as PropType<(path: string, content: unknown) => boolean>,
     default: (): boolean => true,
   },
   // Highlight current node when selected.
@@ -90,6 +94,7 @@ export default defineComponent({
     collapsed: Boolean,
     // Whether the current node is checked(When using the selection function).
     checked: Boolean,
+    style: Object as PropType<CSSProperties>,
     onTreeNodeClick: {
       type: Function as PropType<(node: NodeDataType) => void>,
     },
@@ -138,7 +143,7 @@ export default defineComponent({
       emit('value-change', value, props.node.path);
     };
 
-    const defaultFormatter = (data: string) => {
+    const defaultFormatter = (data: unknown) => {
       const str = data + '';
       const text = dataType.value === 'string' ? `"${str}"` : str;
       if (props.editable && state.editing) {
@@ -161,7 +166,7 @@ export default defineComponent({
     };
 
     const customFormatter = props.customValueFormatter
-      ? (data: string) =>
+      ? (data: unknown) =>
           props.customValueFormatter?.(
             data,
             props.node.key,
@@ -226,9 +231,11 @@ export default defineComponent({
       showLength,
       collapsed,
       showLine,
+      showLineNumber,
       editable,
       editableTrigger,
       showIcon,
+      style,
     } = this;
 
     const {
@@ -245,10 +252,14 @@ export default defineComponent({
         class={{
           'vjs-tree__node': true,
           'has-selector': showSelectController,
+          'has-carets': showIcon,
           'is-highlight': highlightSelectedNode && checked,
         }}
         onClick={onNodeClick}
+        style={style}
       >
+        {showLineNumber && <span class="vjs-node__index">{node.id + 1}</span>}
+
         {showSelectController &&
           state.selectable &&
           node.type !== 'objectEnd' &&
@@ -276,8 +287,8 @@ export default defineComponent({
         {node.key && <span class="vjs-key">{`${state.prettyKey}: `}</span>}
 
         <span>
-          {node.type !== 'content' ? (
-            <Brackets data={node.content} onClick={onBracketsClickHandler} />
+          {node.type !== 'content' && node.content ? (
+            <Brackets data={node.content.toString()} onClick={onBracketsClickHandler} />
           ) : customFormatter ? (
             <span class={state.valueClass} v-html={customFormatter(node.content)} />
           ) : (

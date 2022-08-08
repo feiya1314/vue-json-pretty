@@ -1,4 +1,12 @@
-import { defineComponent, reactive, computed, watchEffect, ref, PropType } from 'vue';
+import {
+  defineComponent,
+  reactive,
+  computed,
+  watchEffect,
+  ref,
+  PropType,
+  CSSProperties,
+} from 'vue';
 import TreeNode, { treeNodePropsPass, NodeDataType } from 'src/components/TreeNode';
 import { emitError, jsonFlatten, JSONDataType, cloneDeep } from 'src/utils';
 import './styles.less';
@@ -38,10 +46,10 @@ export default defineComponent({
       type: Boolean,
       default: false,
     },
-    //When using virtual scroll, set the number of items there can be
-    virtualLines: {
+    // When using virtual scroll, set the height of tree.
+    height: {
       type: Number,
-      default: 10,
+      default: 400,
     },
     // When using virtual scroll, define the height of each row.
     itemHeight: {
@@ -54,18 +62,19 @@ export default defineComponent({
       type: [String, Array] as PropType<string | string[]>,
       default: () => '',
     },
+    style: Object as PropType<CSSProperties>,
   },
 
-  emits: ['nodeClick', 'selectedChange', 'update:selectedValue', 'update:data'],
-  emits: ['click', 'change', 'update:modelValue'],
-
+  emits: ['nodeClick', 'bracketsClick', 'selectedChange', 'update:selectedValue', 'update:data'],
   setup(props, { emit }) {
     const tree = ref<HTMLElement>();
+
+    const originFlatData = computed(() => jsonFlatten(props.data, props.path));
 
     const state = reactive({
       translateY: 0,
       visibleData: null as FlatDataType | null,
-      hiddenPaths: jsonFlatten(props.data, props.path).reduce((acc, item) => {
+      hiddenPaths: originFlatData.value.reduce((acc, item) => {
         const depthComparison = props.deepCollapseChildren
           ? item.level >= props.deep
           : item.level === props.deep;
@@ -86,29 +95,34 @@ export default defineComponent({
 
     const flatData = computed(() => {
       let startHiddenItem: null | NodeDataType = null;
-      const data = jsonFlatten(props.data, props.path).reduce((acc, cur, index) => {
+      const data = [];
+      const length = originFlatData.value.length;
+      for (let i = 0; i < length; i++) {
+        const cur = originFlatData.value[i];
         const item = {
           ...cur,
-          id: index,
+          id: i,
         };
         const isHidden = state.hiddenPaths[item.path];
         if (startHiddenItem && startHiddenItem.path === item.path) {
           const isObject = startHiddenItem.type === 'objectStart';
           const mergeItem = {
-            ...startHiddenItem,
             ...item,
+            ...startHiddenItem,
+            showComma: item.showComma,
             content: isObject ? '{...}' : '[...]',
             type: isObject ? 'objectCollapsed' : 'arrayCollapsed',
           } as NodeDataType;
           startHiddenItem = null;
-          return acc.concat(mergeItem);
+          data.push(mergeItem);
         } else if (isHidden && !startHiddenItem) {
           startHiddenItem = item;
-          return acc;
+          continue;
+        } else {
+          if (startHiddenItem) continue;
+          else data.push(item);
         }
-
-        return startHiddenItem ? acc : acc.concat(item);
-      }, [] as FlatDataType);
+      }
       return data;
     });
 
@@ -130,7 +144,7 @@ export default defineComponent({
     const updateVisibleData = (flatDataValue: FlatDataType) => {
       if (props.virtual) {
         const treeRefValue = tree.value;
-        const visibleCount = props.virtualLines;
+        const visibleCount = props.height / props.itemHeight;
         const scrollTop = (treeRefValue && treeRefValue.scrollTop) || 0;
         const scrollCount = Math.floor(scrollTop / props.itemHeight);
         let start =
@@ -191,6 +205,7 @@ export default defineComponent({
         delete newPaths[path];
         state.hiddenPaths = newPaths;
       }
+      emit('bracketsClick', collapsed);
     };
 
     const onValueChange = (value: unknown, path: string) => {
@@ -198,7 +213,6 @@ export default defineComponent({
       const rootPath = props.path;
       new Function('data', 'val', `data${path.slice(rootPath.length)}=val`)(newData, value);
       emit('update:data', newData);
-      console.log(newData);
     };
 
     watchEffect(() => {
@@ -229,11 +243,13 @@ export default defineComponent({
   render() {
     const {
       virtual,
+      height,
       itemHeight,
       customValueFormatter,
       showDoubleQuotes,
       showLength,
       showLine,
+      showLineNumber,
       showSelectController,
       selectOnClickNode,
       pathSelectable,
@@ -246,6 +262,7 @@ export default defineComponent({
       editable,
       editableTrigger,
       showIcon,
+      style,
     } = this;
 
     const { onTreeNodeClick, onBracketsClick, onSelectedChange, onTreeScroll, onValueChange } =
@@ -265,6 +282,7 @@ export default defineComponent({
           checked={selectedPaths.includes(item.path)}
           selectable-type={selectableType}
           show-line={showLine}
+          show-line-number={showLineNumber}
           show-select-controller={showSelectController}
           select-on-click-node={selectOnClickNode}
           path-selectable={pathSelectable}
@@ -276,6 +294,7 @@ export default defineComponent({
           onBracketsClick={onBracketsClick}
           onSelectedChange={onSelectedChange}
           onValueChange={onValueChange}
+          style={itemHeight && itemHeight !== 20 ? { lineHeight: `${itemHeight}px` } : {}}
         />
       ));
 
@@ -286,11 +305,18 @@ export default defineComponent({
           'vjs-tree': true,
           'is-virtual': virtual,
         }}
-        onScroll={onTreeScroll}
+        onScroll={virtual ? onTreeScroll : undefined}
+        style={
+          showLineNumber
+            ? { paddingLeft: `${Number(flatData.length.toString().length) * 12}px`, ...style }
+            : style
+        }
       >
         {virtual ? (
-          <div style={{ height: `${flatData.length * itemHeight}px` }}>
-            <div style={{ transform: `translateY(${state.translateY}px)` }}>{nodeContent}</div>
+          <div style={{ height: `${height}px` }}>
+            <div style={{ height: `${flatData.length * itemHeight}px` }}>
+              <div style={{ transform: `translateY(${state.translateY}px)` }}>{nodeContent}</div>
+            </div>
           </div>
         ) : (
           nodeContent
